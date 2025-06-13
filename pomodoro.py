@@ -1,34 +1,27 @@
 import sys
 from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout,
-    QComboBox, QSpinBox, QMessageBox, QSystemTrayIcon, QMenu
+    QSystemTrayIcon, QMenu, QButtonGroup
 )
-from PySide6.QtCore import QTimer, Qt, QSettings
-from PySide6.QtGui import QPainter, QPen, QColor, QIcon, QFont
+from PySide6.QtCore import QTimer, Qt, QRect, QPoint
+from PySide6.QtGui import QPainter, QPen, QColor, QIcon, QFont, QPainterPath
 
 class PomodoroTimer(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Pomodoro Profesional")
         self.setFixedSize(340, 420)
-        self.setStyleSheet(
-            """
-            QWidget {background-color: #f2f2f2; color: #333; font-family: Arial;}
-            QComboBox, QPushButton {
-                background-color: #fff;
-                border: 1px solid #ccc;
-                padding: 6px 12px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {background-color: #eee;}
-            """
-        )
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
 
-        self.settings = QSettings('future', 'pomodoro')
-        # Default durations in minutes
-        self.duracion_trabajo = self.settings.value('trabajo', 25, int)
-        self.duracion_descanso_corto = self.settings.value('corto', 5, int)
-        self.duracion_descanso_largo = self.settings.value('largo', 15, int)
+        # Durations in minutes (change here if needed)
+        self.duracion_trabajo = 25
+        self.duracion_descanso_corto = 5
+        self.duracion_descanso_largo = 15
+
+        self.drag_pos = None
+        self.resizing = False
+        self.handle_size = 16
 
         self.tiempo_total = self.duracion_trabajo * 60
         self.tiempo_restante = self.tiempo_total
@@ -52,41 +45,48 @@ class PomodoroTimer(QWidget):
 
         self.reloj = QLabel(self.formato_tiempo(self.tiempo_restante))
         self.reloj.setAlignment(Qt.AlignCenter)
-        self.reloj.setFont(QFont("Arial", 40, QFont.Bold))
+        self.reloj.setFont(QFont("Arial", 48))
         main_layout.addWidget(self.reloj)
 
-        # Duration controls
-        dur_layout = QHBoxLayout()
-        self.spin_trabajo = QSpinBox()
-        self.spin_trabajo.setRange(1, 120)
-        self.spin_trabajo.setValue(self.duracion_trabajo)
-        self.spin_trabajo.valueChanged.connect(self.guardar_config)
-        dur_layout.addWidget(QLabel("Trabajo:"))
-        dur_layout.addWidget(self.spin_trabajo)
+        mode_layout = QHBoxLayout()
+        self.btn_pomodoro = QPushButton("Pomodoro")
+        self.btn_pomodoro.setCheckable(True)
+        self.btn_pomodoro.setChecked(True)
+        self.btn_short = QPushButton("Short Break")
+        self.btn_short.setCheckable(True)
+        self.btn_long = QPushButton("Long Break")
+        self.btn_long.setCheckable(True)
 
-        self.spin_corto = QSpinBox()
-        self.spin_corto.setRange(1, 60)
-        self.spin_corto.setValue(self.duracion_descanso_corto)
-        self.spin_corto.valueChanged.connect(self.guardar_config)
-        dur_layout.addWidget(QLabel("Corto:"))
-        dur_layout.addWidget(self.spin_corto)
+        btn_style = (
+            "QPushButton {border:none;background:transparent;padding:6px;}"
+            "QPushButton:checked {color:#7e5bef;font-weight:bold;}"
+        )
+        for b in (self.btn_pomodoro, self.btn_short, self.btn_long):
+            b.setStyleSheet(btn_style)
 
-        self.spin_largo = QSpinBox()
-        self.spin_largo.setRange(1, 60)
-        self.spin_largo.setValue(self.duracion_descanso_largo)
-        self.spin_largo.valueChanged.connect(self.guardar_config)
-        dur_layout.addWidget(QLabel("Largo:"))
-        dur_layout.addWidget(self.spin_largo)
+        self.mode_group = QButtonGroup(self)
+        self.mode_group.setExclusive(True)
+        for btn in (self.btn_pomodoro, self.btn_short, self.btn_long):
+            self.mode_group.addButton(btn)
+            mode_layout.addWidget(btn)
+            btn.clicked.connect(self.cambiar_modo)
 
-        main_layout.addLayout(dur_layout)
-
-        self.combo = QComboBox()
-        self.combo.addItems(["Pomodoro", "Descanso corto", "Descanso largo"])
-        self.combo.currentIndexChanged.connect(self.cambiar_modo)
-        main_layout.addWidget(self.combo)
+        main_layout.addLayout(mode_layout)
 
         btn_layout = QHBoxLayout()
         self.boton_inicio = QPushButton("Iniciar")
+        self.boton_inicio.setStyleSheet(
+            """
+            QPushButton {
+                background-color: white;
+                border: 1px solid #ccc;
+                border-radius: 20px;
+                font-size: 16px;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {background-color: #f0f0f0;}
+            """
+        )
         self.boton_inicio.clicked.connect(self.toggle_timer)
         btn_layout.addWidget(self.boton_inicio)
 
@@ -98,20 +98,10 @@ class PomodoroTimer(QWidget):
 
         self.setLayout(main_layout)
 
-    def guardar_config(self):
-        self.duracion_trabajo = self.spin_trabajo.value()
-        self.duracion_descanso_corto = self.spin_corto.value()
-        self.duracion_descanso_largo = self.spin_largo.value()
-        self.settings.setValue('trabajo', self.duracion_trabajo)
-        self.settings.setValue('corto', self.duracion_descanso_corto)
-        self.settings.setValue('largo', self.duracion_descanso_largo)
-        self.cambiar_modo()
-
     def cambiar_modo(self):
-        modo = self.combo.currentText()
-        if modo == "Pomodoro":
+        if self.btn_pomodoro.isChecked():
             self.tiempo_total = self.duracion_trabajo * 60
-        elif modo == "Descanso corto":
+        elif self.btn_short.isChecked():
             self.tiempo_total = self.duracion_descanso_corto * 60
         else:
             self.tiempo_total = self.duracion_descanso_largo * 60
@@ -147,19 +137,56 @@ class PomodoroTimer(QWidget):
         return f"{m:02}:{s:02}"
 
     def paintEvent(self, _):
-        if self.tiempo_total == 0:
-            return
-        progreso = 1 - (self.tiempo_restante / self.tiempo_total)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        rect = self.rect().adjusted(40, 40, -40, -180)
-        track_pen = QPen(QColor("#d0d0d0"), 10)
-        painter.setPen(track_pen)
-        painter.drawArc(rect, 0, 360 * 16)
 
-        pen = QPen(QColor("#7e5bef"), 10)
-        painter.setPen(pen)
-        painter.drawArc(rect, 90 * 16, -progreso * 360 * 16)
+        bg_rect = self.rect().adjusted(5, 5, -5, -5)
+        path = QPainterPath()
+        path.addRoundedRect(bg_rect, 30, 30)
+        painter.fillPath(path, QColor("#ffffff"))
+
+        if self.tiempo_total > 0:
+            progreso = 1 - (self.tiempo_restante / self.tiempo_total)
+            arc_rect = bg_rect.adjusted(35, 35, -35, -175)
+            track_pen = QPen(QColor("#e6e6e6"), 10)
+            painter.setPen(track_pen)
+            painter.drawArc(arc_rect, 0, 360 * 16)
+
+            pen = QPen(QColor("#7e5bef"), 10)
+            painter.setPen(pen)
+            painter.drawArc(arc_rect, 90 * 16, -progreso * 360 * 16)
+
+        handle = QRect(self.width() - self.handle_size,
+                       self.height() - self.handle_size,
+                       self.handle_size, self.handle_size)
+        painter.fillRect(handle, QColor("#dddddd"))
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            if (self.width() - event.pos().x() <= self.handle_size and
+                    self.height() - event.pos().y() <= self.handle_size):
+                self.resizing = True
+                self.drag_pos = event.globalPosition().toPoint()
+                self.start_size = self.size()
+            else:
+                self.drag_pos = event.globalPosition().toPoint()
+
+    def mouseMoveEvent(self, event):
+        if self.drag_pos is None:
+            return
+        if self.resizing:
+            delta = event.globalPosition().toPoint() - self.drag_pos
+            new_width = max(200, self.start_size.width() + delta.x())
+            new_height = max(200, self.start_size.height() + delta.y())
+            self.resize(new_width, new_height)
+        else:
+            self.move(self.pos() + event.globalPosition().toPoint() - self.drag_pos)
+            self.drag_pos = event.globalPosition().toPoint()
+
+    def mouseReleaseEvent(self, _):
+        self.drag_pos = None
+        self.resizing = False
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

@@ -4,13 +4,25 @@ from PySide6.QtWidgets import (
     QComboBox, QSpinBox, QMessageBox, QSystemTrayIcon, QMenu
 )
 from PySide6.QtCore import QTimer, Qt, QSettings
-from PySide6.QtGui import QPainter, QPen, QColor, QIcon
+from PySide6.QtGui import QPainter, QPen, QColor, QIcon, QFont
 
 class PomodoroTimer(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Pomodoro Profesional")
-        self.setFixedSize(320, 420)
+        self.setFixedSize(340, 420)
+        self.setStyleSheet(
+            """
+            QWidget {background-color: #f2f2f2; color: #333; font-family: Arial;}
+            QComboBox, QPushButton {
+                background-color: #fff;
+                border: 1px solid #ccc;
+                padding: 6px 12px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {background-color: #eee;}
+            """
+        )
 
         self.settings = QSettings('future', 'pomodoro')
         # Default durations in minutes
@@ -36,10 +48,11 @@ class PomodoroTimer(QWidget):
 
     def init_ui(self):
         main_layout = QVBoxLayout(alignment=Qt.AlignCenter)
+        main_layout.setContentsMargins(30, 30, 30, 30)
 
         self.reloj = QLabel(self.formato_tiempo(self.tiempo_restante))
         self.reloj.setAlignment(Qt.AlignCenter)
-        self.reloj.setStyleSheet("font-size: 36px;")
+        self.reloj.setFont(QFont("Arial", 40, QFont.Bold))
         main_layout.addWidget(self.reloj)
 
         # Duration controls
@@ -140,7 +153,11 @@ class PomodoroTimer(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         rect = self.rect().adjusted(40, 40, -40, -180)
-        pen = QPen(QColor("#6c63ff"), 10)
+        track_pen = QPen(QColor("#d0d0d0"), 10)
+        painter.setPen(track_pen)
+        painter.drawArc(rect, 0, 360 * 16)
+
+        pen = QPen(QColor("#7e5bef"), 10)
         painter.setPen(pen)
         painter.drawArc(rect, 90 * 16, -progreso * 360 * 16)
 
